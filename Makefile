@@ -1,5 +1,5 @@
 docker:
-	docker build -f build/Dockerfile -t tarantool-operator .
+	docker build -f build/Dockerfile -t local/tarantool-operator:11.0.0 .
 
 crds:
 	operator-sdk generate crds

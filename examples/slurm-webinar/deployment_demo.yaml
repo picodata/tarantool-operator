@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tarantool-deployment
+  labels:
+    app: tarantool-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tarantool-app
+  template:
+    metadata:
+      name: tarantool
+      labels:
+        app: tarantool-app
+    spec:
+      containers:
+        - name: db
+          image: mikhailfilonenko/thestreets
+          ports:
+            - containerPort: 3301
+              protocol: TCP
+              name: app
+            - containerPort: 3301
+              protocol: UDP
+              name: app-udp
+            - containerPort: 8081
+              protocol: TCP
+              name: http
+          env:
+            - name: TARANTOOL_MEMTX_MEMORY
+              value: "268435456"

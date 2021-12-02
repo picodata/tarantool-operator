@@ -1,46 +1,62 @@
+---
 apiVersion: tarantool.io/v1alpha1
 kind: Cluster
 metadata:
-  name: {{ .Values.ClusterName }}
+  name: tarantool-operator-app
 spec:
   selector:
     matchLabels:
-      tarantool.io/cluster-id: {{ .Values.ClusterName }}
+      tarantool.io/cluster-id: tarantool-operator-app
 ---
-{{- range .Values.RoleConfig }}
-{{- $r := .RolesToAssign | toJson | quote }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: main
+  labels:
+    tarantool.io/role: main
+spec:
+  ports:
+    - port: 8081
+      name: web
+      protocol: TCP
+    - port: 3301
+      name: app
+      protocol: TCP
+  selector:
+    tarantool.io/role: main
+---
 apiVersion: tarantool.io/v1alpha1
 kind: Role
 metadata:
-  name: {{ .RoleName | replace "_" "" }}
+  name: main
   labels:
-    tarantool.io/cluster-id: {{ $.Values.ClusterName }}
-    tarantool.io/role: {{ .RoleName }}
+    tarantool.io/cluster-id: tarantool-operator-app
+    tarantool.io/role: main
   annotations:
-    tarantool.io/rolesToAssign: {{ $r }}
+    tarantool.io/rolesToAssign: "[\"vshard-router\", \"storage\"]"
 spec:
   selector:
     matchLabels:
-      tarantool.io/replicaset-template: "{{ .RoleName }}-template"
-  numReplicasets: {{ .ReplicaSetCount }}
+      tarantool.io/replicaset-template: "main-template"
+  numReplicasets: 1
 ---
 apiVersion: tarantool.io/v1alpha1
 kind: ReplicasetTemplate
-:
-  name: "{{ .RoleName | replace "_" "" }}-template"
+metadata:
+  name: "main-template"
   labels:
-    tarantool.io/cluster-id: {{ $.Values.ClusterName }}
-    tarantool.io/replicaset-template: "{{ .RoleName }}-template"
-    tarantool.io/role: {{ .RoleName }}
+    tarantool.io/cluster-id: tarantool-operator-app
+    tarantool.io/replicaset-template: "main-template"
+    tarantool.io/role: main
     tarantool.io/useVshardGroups: "0"
   annotations:
-    tarantool.io/rolesToAssign: {{ $r }}
+    tarantool.io/rolesToAssign: "[\"vshard-router\", \"storage\"]"
 spec:
-  replicas: {{ .ReplicaCount }}
-  serviceName: {{ .RoleName }}
+  replicas: 1
+  serviceName: main
   selector:
     matchLabels:
-      tarantool.io/pod-template: "{{ .RoleName }}-pod-template"
+      tarantool.io/pod-template: "main-pod-template"
   volumeClaimTemplates:
     - metadata:
         name: www
@@ -48,19 +64,19 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: {{ .DiskSize }}
+            storage: 1Gi
   template:
     metadata:
       labels:
-        tarantool.io/cluster-id: {{ $.Values.ClusterName }}
-        tarantool.io/cluster-domain-name: "{{ $.Values.ClusterDomainName }}"
-        tarantool.io/pod-template: "{{ .RoleName }}-pod-template"
+        tarantool.io/cluster-id: tarantool-operator-app
+        tarantool.io/cluster-domain-name: "cluster.local"
+        tarantool.io/pod-template: "main-pod-template"
         tarantool.io/useVshardGroups: "0"
-        environment: "{{ $.Values.ClusterEnv }}"
+        environment: "dev"
       annotations:
-        tarantool.io/rolesToAssign: {{ $r }}
-        prometheus.io/path: "{{ $.Values.Prometheus.path }}"
-        prometheus.io/port: "{{ $.Values.Prometheus.port}}"
+        tarantool.io/rolesToAssign: "[\"vshard-router\", \"storage\"]"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8081"
         prometheus.io/scrape: "true"
     spec:
       terminationGracePeriodSeconds: 10
@@ -75,18 +91,18 @@ spec:
         capabilities:
           add: ["SYS_ADMIN"]
       containers:
-        - name: pim-storage
-          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+        - name: db
+          image: "mikhailfilonenko/thestreets:latest"
           volumeMounts:
             - name: www
-              mountPath: "{{ $.Values.TarantoolWorkDir }}"
+              mountPath: "/var/lib/tarantool"
           resources:
             requests:
-              cpu: "{{ .CPUallocation }}"
-              memory: "{{ add .MemtxMemoryMB $.Values.LuaMemoryReserveMB }}M"
+              cpu: "0.1"
+              memory: "256M"
             limits:
-              cpu: "{{ .CPUallocation }}"
-              memory: "{{ add .MemtxMemoryMB $.Values.LuaMemoryReserveMB }}M"
+              cpu: "0.1"
+              memory: "256M"
           ports:
             - containerPort: 3301
               protocol: TCP
@@ -99,7 +115,7 @@ spec:
               name: http
           env:
             - name: ENVIRONMENT
-              value: "{{ $.Values.ClusterEnv }}"
+              value: "dev"
             - name: TARANTOOL_INSTANCE_NAME
               valueFrom:
                 fieldRef:
@@ -107,17 +123,17 @@ spec:
             - name: TARANTOOL_ALIAS
               value: "$(TARANTOOL_INSTANCE_NAME)"
             - name: TARANTOOL_MEMTX_MEMORY
-              value: "{{ mul .MemtxMemoryMB 1048576 }}"
+              value: "268435456"
             - name: TARANTOOL_BUCKET_COUNT
               value: "30000"
             - name: TARANTOOL_WORKDIR
-              value: "{{ $.Values.TarantoolWorkDir }}"
+              value: "/var/lib/tarantool"
             - name: TARANTOOL_ADVERTISE_TMP
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
             - name: TARANTOOL_ADVERTISE_HOST
-              value: "$(TARANTOOL_ADVERTISE_TMP).{{ $.Values.ClusterName }}.{{ $.Release.Namespace }}.svc.{{ $.Values.ClusterDomainName }}"
+              value: "$(TARANTOOL_ADVERTISE_TMP).tarantool-operator-app.sandbox.svc.cluster.local"
             - name: TARANTOOL_ADVERTISE_URI
               value: "$(TARANTOOL_ADVERTISE_HOST):3301"
             - name: TARANTOOL_PROBE_URI_TIMEOUT
@@ -129,23 +145,4 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ .RoleName }}
-  labels:
-    tarantool.io/role: {{ .RoleName }}
-spec:
-  ports:
-    - port: 8081
-      name: web
-      protocol: TCP
-    - port: 3301
-      name: app
-      protocol: TCP
-  selector:
-    tarantool.io/role: {{ .RoleName }}
----
-{{- end }}
----
+

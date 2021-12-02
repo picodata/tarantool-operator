@@ -286,14 +286,20 @@ func CreateStatefulSetFromTemplate(replicasetNumber int, name string, role *tara
 
 	sts.Name = name
 	sts.Namespace = role.GetNamespace()
-	sts.ObjectMeta.Labels = role.GetLabels()
 
 	sts.Spec.UpdateStrategy = appsv1.StatefulSetUpdateStrategy{Type: "OnDelete"}
+	reqLogger.Info("Update Strategy: %s", "key", sts.Spec.UpdateStrategy.Type)
 
-	reqLogger.Info("Update Strategy: %s", sts.Spec.UpdateStrategy.Type)
+	if sts.ObjectMeta.Labels == nil {
+		sts.ObjectMeta.Labels = make(map[string]string)
+	}
+	if sts.Spec.Template.Labels == nil {
+		sts.Spec.Template.Labels = make(map[string]string)
+	}
 
 	for k, v := range role.GetLabels() {
 		sts.Spec.Template.Labels[k] = v
+		sts.ObjectMeta.Labels[k] = v
 	}
 
 	privileged := false

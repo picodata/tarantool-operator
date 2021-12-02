@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tarantool-statefulset-app-svc
+  labels:
+    app: tarantool-statefulset-app
+spec:
+  ports:
+  - port: 3031
+    name: app
+    protocol: TCP
+  clusterIP: None
+  selector:
+    app: tarantool-statefulset-app
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tarantool-statefulset-app
+spec:
+  serviceName: tarantool-statefulset-app-svc
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tarantool-statefulset-app
+  template:
+    metadata:
+      labels:
+        app: tarantool-statefulset-app
+    spec:
+      securityContext:
+        runAsUser: 1200
+        runAsGroup: 1200
+      containers:
+      - name: db
+        image: mikhailfilonenko/thestreets
+        ports:
+        - containerPort: 3301
+          protocol: TCP
+          name: app
+        - containerPort: 3301
+          protocol: UDP
+          name: app-udp
+        - containerPort: 8081
+          protocol: TCP
+          name: http
+        volumeMounts:
+        - name: www
+          mountPath: /var/lib/tarantool
+        env:
+        - name: TARANTOOL_INSTANCE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: TARANTOOL_ALIAS
+          value: "$(TARANTOOL_INSTANCE_NAME)"
+        - name: TARANTOOL_ADVERTISE_TMP
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: TARANTOOL_MEMTX_MEMORY
+          value: "268435456"
+        - name: TARANTOOL_WORKDIR
+          value: "/var/lib/tarantool"
+        - name: TARANTOOL_ADVERTISE_HOST
+          value: "$(TARANTOOL_ADVERTISE_TMP).tarantool-statefulset-app-svc.sandbox.svc.cluster.local"
+        - name: TARANTOOL_ADVERTISE_URI
+          value: "$(TARANTOOL_ADVERTISE_HOST):3301"
+        - name: TARANTOOL_PROBE_URI_TIMEOUT
+          value: "60"
+        - name: TARANTOOL_HTTP_PORT
+          value: "8081"
+  volumeClaimTemplates:
+  - metadata:
+      name: www
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
