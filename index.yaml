@@ -3,6 +3,15 @@ entries:
   cartridge:
   - apiVersion: v1
     appVersion: "1.0"
+    created: "2022-05-19T16:56:02.461814+03:00"
+    description: A Helm chart for tarantool
+    digest: d6ed9f205e58dcced6f39cddbe9293f5daf614417a18411e06e6c482c1f97b75
+    name: cartridge
+    urls:
+    - https://github.com/picodata/tarantool-operator/releases/download/cartridge-0.0.13/cartridge-0.0.13.tgz
+    version: 0.0.13
+  - apiVersion: v1
+    appVersion: "1.0"
     created: "2022-05-04T13:12:18.185962+03:00"
     description: A Helm chart for tarantool
     digest: b8943c73fc7915dcac739262244724a9c690eb01fbf24d272f2b55e765102841
@@ -154,4 +163,4 @@ entries:
     urls:
     - https://github.com/tarantool/tarantool-operator/releases/download/tarantool-operator-0.0.4/tarantool-operator-0.0.4.tgz
     version: 0.0.4
-generated: "2022-05-04T13:12:18.601235+03:00"
+generated: "2022-05-19T16:56:02.461853+03:00"
