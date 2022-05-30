@@ -85,6 +85,16 @@ entries:
   tarantool-operator:
   - apiVersion: v2
     appVersion: 1.16.0
+    created: "2022-05-30T13:49:47.372371+03:00"
+    description: kubernetes tarantool operator
+    digest: 294119d144f115a9378711e418951086cfbafe1a82197fd94211a5048a208800
+    name: tarantool-operator
+    type: application
+    urls:
+    - https://github.com/picodata/tarantool-operator/releases/download/tarantool-operator-0.0.13/tarantool-operator-0.0.13.tgz
+    version: 0.0.13
+  - apiVersion: v2
+    appVersion: 1.16.0
     created: "2022-05-04T13:12:18.601149+03:00"
     description: kubernetes tarantool operator
     digest: 3a02174e3889594626b98e224d2281618727d1463dac8b766546ba1bba820f96
@@ -163,4 +173,4 @@ entries:
     urls:
     - https://github.com/tarantool/tarantool-operator/releases/download/tarantool-operator-0.0.4/tarantool-operator-0.0.4.tgz
     version: 0.0.4
-generated: "2022-05-19T16:56:02.461853+03:00"
+generated: "2022-05-30T13:49:47.372408+03:00"
