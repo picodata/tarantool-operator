@@ -15,6 +15,18 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+type EditTopologyResponse struct {
+	EditTopology EditTopology `json:"edit_topology"`
+}
+
+type EditTopology struct {
+	Servers []Server `json:"servers"`
+}
+
+type Server struct {
+	UUID string `json:"uuid"`
+}
+
 // ResponseError .
 type ResponseError struct {
 	Message string `json:"message"`
@@ -115,6 +127,21 @@ type Statistics struct {
 	BucketsCount   int    `json:"bucketsCount"`
 }
 
+// join_servers array for editTopology
+type EditTopologyServer struct {
+	Uri string `json:"uri"`
+}
+
+// Replicasets
+type Replicasets struct {
+	Alias        string               `json:"alias"`
+	Roles        []string             `json:"roles"`
+	Weight       int                  `json:"weight"`
+	All_rw       bool                 `json:"all_rw"`
+	Vshard_group string               `json:"vshard_group"`
+	Join_servers []EditTopologyServer `json:"join_servers"`
+}
+
 var log = logf.Log.WithName("topology")
 
 var (
@@ -188,6 +215,16 @@ var setFailoverStateQuery = `mutation setFailoverMode($mode: String) {
 	}
 }`
 
+var editTopologyQuery = `mutation editTopology($replicasets: [EditReplicasetInput!], $servers: [EditServerInput!]) {
+    cluster {
+      edit_topology(replicasets: $replicasets, servers: $servers) {
+        servers {
+          uuid
+        }
+      }
+    }
+}`
+
 // An interface describing an object with accessor methods for labels and annotations
 type ObjectWithMeta interface {
 	GetLabels() map[string]string
@@ -228,6 +265,79 @@ func GetRoles(obj ObjectWithMeta) ([]string, error) {
 	}
 
 	return nil, errors.New("failed to parse roles from annotations")
+}
+
+// Harness of edit topology query
+func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) error {
+	var replicasUri []EditTopologyServer
+	var replicasetsValues Replicasets
+	var replicasetsValuesArray []Replicasets
+	var lastNode *corev1.Pod
+
+	// Generating URI's array
+	for key, pod := range replicas {
+		fmt.Println("Recieved values to join: ", key)
+		thisPodLabels := pod.GetLabels()
+		clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
+		if !ok {
+			clusterDomainName = "cluster.local"
+		}
+
+		advURI := fmt.Sprintf("%s.%s.%s.svc.%s:3301",
+			pod.GetObjectMeta().GetName(),      // Instance name
+			s.clusterID,                        // Cartridge cluster name
+			pod.GetObjectMeta().GetNamespace(), // Namespace
+			clusterDomainName)                  // Cluster domain name
+		replicasUri = append(replicasUri, EditTopologyServer{Uri: advURI})
+
+		log.Info("Pod URI: " + advURI)
+
+		lastNode = pod
+	}
+
+	// Constructing graphQL variables structure
+	// Extracting all from the last node in set
+	thisPodLabels := lastNode.GetLabels()
+
+	roles, err := GetRoles(lastNode)
+	if err != nil {
+		return err
+	}
+	log.Info("roles", "roles", roles)
+
+	vshardGroup := "default"
+	useVshardGroups, ok := thisPodLabels["tarantool.io/useVshardGroups"]
+	if !ok {
+		return errors.New("failed to get label tarantool.io/useVshardGroups")
+	}
+	if useVshardGroups == "1" {
+		vshardGroup, ok = thisPodLabels["tarantool.io/vshardGroupName"]
+		if !ok {
+			return errors.New("vshard_group undefined")
+		}
+	}
+
+	// Generating replicaset name
+	// TODO: So far weight can't be read from values.yaml
+	replicasetsValues.Alias = rsetName + "_replicaset"
+	replicasetsValues.Roles = roles
+	replicasetsValues.Weight = 10
+	replicasetsValues.Vshard_group = vshardGroup
+	replicasetsValues.All_rw = false
+	replicasetsValues.Join_servers = replicasUri
+
+	// GraphQL request
+	client := graphql.NewClient(s.serviceHost, graphql.WithHTTPClient(&http.Client{Timeout: time.Duration(time.Second * 5)}))
+	req := graphql.NewRequest(editTopologyQuery)
+	replicasetsValuesArray = append(replicasetsValuesArray, replicasetsValues)
+	req.Var("replicasets", replicasetsValuesArray)
+	resp := &EditTopologyResponse{}
+
+	if err := client.Run(context.TODO(), req, resp); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Join comment
