@@ -127,7 +127,7 @@ type Statistics struct {
 	BucketsCount   int    `json:"bucketsCount"`
 }
 
-// join_servers array for editTopology
+// JoinServers array for editTopology
 type EditTopologyServer struct {
 	Uri string `json:"uri"`
 }
@@ -139,7 +139,7 @@ type Replicasets struct {
 	Weight       int                  `json:"weight"`
 	All_rw       bool                 `json:"all_rw"`
 	Vshard_group string               `json:"vshard_group"`
-	Join_servers []EditTopologyServer `json:"join_servers"`
+	JoinServers  []EditTopologyServer `json:"join_servers"`
 }
 
 var log = logf.Log.WithName("topology")
@@ -270,13 +270,11 @@ func GetRoles(obj ObjectWithMeta) ([]string, error) {
 // Harness of edit topology query
 func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) error {
 	var replicasUri []EditTopologyServer
-	var replicasetsValues Replicasets
-	var replicasetsValuesArray []Replicasets
 	var lastNode *corev1.Pod
+	var podLabels map[string]string = nil
 
 	// Generating URI's array
-	for key, pod := range replicas {
-		fmt.Println("Recieved values to join: ", key)
+	for _, pod := range replicas {
 		thisPodLabels := pod.GetLabels()
 		clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
 		if !ok {
@@ -287,31 +285,29 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 			pod.GetObjectMeta().GetName(),      // Instance name
 			s.clusterID,                        // Cartridge cluster name
 			pod.GetObjectMeta().GetNamespace(), // Namespace
-			clusterDomainName)                  // Cluster domain name
+			clusterDomainName,                  // Cluster domain name
+		)
 		replicasUri = append(replicasUri, EditTopologyServer{Uri: advURI})
 
-		log.Info("Pod URI: " + advURI)
-
-		lastNode = pod
+		if podLabels != nil {
+			podLabels = pod.GetLabels()
+		}
 	}
 
 	// Constructing graphQL variables structure
-	// Extracting all from the last node in set
-	thisPodLabels := lastNode.GetLabels()
 
 	roles, err := GetRoles(lastNode)
 	if err != nil {
 		return err
 	}
-	log.Info("roles", "roles", roles)
 
 	vshardGroup := "default"
-	useVshardGroups, ok := thisPodLabels["tarantool.io/useVshardGroups"]
+	useVshardGroups, ok := podLabels["tarantool.io/useVshardGroups"]
 	if !ok {
 		return errors.New("failed to get label tarantool.io/useVshardGroups")
 	}
 	if useVshardGroups == "1" {
-		vshardGroup, ok = thisPodLabels["tarantool.io/vshardGroupName"]
+		vshardGroup, ok = podLabels["tarantool.io/vshardGroupName"]
 		if !ok {
 			return errors.New("vshard_group undefined")
 		}
@@ -319,14 +315,16 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 
 	// Generating replicaset name
 	// TODO: So far weight can't be read from values.yaml
+	var replicasetsValues Replicasets
 	replicasetsValues.Alias = rsetName + "_replicaset"
 	replicasetsValues.Roles = roles
 	replicasetsValues.Weight = 10
 	replicasetsValues.Vshard_group = vshardGroup
 	replicasetsValues.All_rw = false
-	replicasetsValues.Join_servers = replicasUri
+	replicasetsValues.JoinServers = replicasUri
 
 	// GraphQL request
+	var replicasetsValuesArray []Replicasets
 	client := graphql.NewClient(s.serviceHost, graphql.WithHTTPClient(&http.Client{Timeout: time.Duration(time.Second * 5)}))
 	req := graphql.NewRequest(editTopologyQuery)
 	replicasetsValuesArray = append(replicasetsValuesArray, replicasetsValues)
@@ -371,7 +369,6 @@ func (s *BuiltInTopologyService) Join(pod *corev1.Pod) error {
 	if err != nil {
 		return err
 	}
-	log.Info("roles", "roles", roles)
 
 	vshardGroup := "default"
 	useVshardGroups, ok := thisPodLabels["tarantool.io/useVshardGroups"]
