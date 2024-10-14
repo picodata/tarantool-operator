@@ -468,7 +468,7 @@ func (s *BuiltInTopologyService) Expel(pod *corev1.Pod) error {
 		return err
 	}
 
-	if !resp.Data.ExpelInstance && (resp.Errors == nil || len(resp.Errors) == 0) {
+	if !resp.Data.ExpelInstance && (len(resp.Errors) == 0) {
 		return errors.New("something really bad happened")
 	}
 
@@ -610,7 +610,7 @@ func (s *BuiltInTopologyService) BootstrapVshard() error {
 	if resp.Data.BootstrapVshard {
 		return nil
 	}
-	if resp.Errors != nil && len(resp.Errors) > 0 {
+	if len(resp.Errors) > 0 {
 		if strings.Contains(resp.Errors[0].Message, "already bootstrapped") {
 			return errAlreadyBootstrapped
 		}
