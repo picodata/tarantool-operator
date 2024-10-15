@@ -270,11 +270,13 @@ func GetRoles(obj ObjectWithMeta) ([]string, error) {
 // Harness of edit topology query
 func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) error {
 	var replicasUri []EditTopologyServer
-	var lastNode *corev1.Pod
 	var podLabels map[string]string = nil
+	var roles []string = nil
+	var err error
 
 	// Generating URI's array
-	for _, pod := range replicas {
+	for key, pod := range replicas {
+		fmt.Println("Recieved values to join: ", key)
 		thisPodLabels := pod.GetLabels()
 		clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
 		if !ok {
@@ -285,22 +287,21 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 			pod.GetObjectMeta().GetName(),      // Instance name
 			s.clusterID,                        // Cartridge cluster name
 			pod.GetObjectMeta().GetNamespace(), // Namespace
-			clusterDomainName,                  // Cluster domain name
-		)
+			clusterDomainName)                  // Cluster domain name
 		replicasUri = append(replicasUri, EditTopologyServer{Uri: advURI})
 
-		if podLabels != nil {
+		if podLabels == nil {
+			// Extracting all from the last node in set
 			podLabels = pod.GetLabels()
+
+			roles, err = GetRoles(pod)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	// Constructing graphQL variables structure
-
-	roles, err := GetRoles(lastNode)
-	if err != nil {
-		return err
-	}
-
 	vshardGroup := "default"
 	useVshardGroups, ok := podLabels["tarantool.io/useVshardGroups"]
 	if !ok {
