@@ -164,7 +164,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.Update(context.TODO(), &role); err != nil {
 			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
 		}
-
+		// test
 		reqLogger.Info("Set role ownership", "Role.Name", role.GetName(), "Cluster.Name", cluster.GetName())
 	}
 
