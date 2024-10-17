@@ -3,7 +3,6 @@ package topology
 import (
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -174,7 +173,7 @@ var setFailoverGQL = `mutation setFailoverMode($mode: String) {
 
 func TestSetFailover(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, err := ioutil.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("%s", err)
 		}
@@ -226,7 +225,7 @@ var getFailoverGQL = `query {
 func TestGetFailover(t *testing.T) {
 	var failoverMode string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, err := ioutil.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("%s", err)
 		}

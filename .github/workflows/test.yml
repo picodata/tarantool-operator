@@ -65,7 +65,7 @@ jobs:
       uses: azure/setup-helm@v1
 
     - name: Set up Kind Cluster
-      uses: helm/kind-action@v1.2.0
+      uses: helm/kind-action@v1.10.0
       with:
         node_image: kindest/node:${{ matrix.kubernetes-version }}
         cluster_name: ${{ env.KIND_CLUSTER_NAME }}
