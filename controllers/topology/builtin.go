@@ -268,15 +268,15 @@ func GetRoles(obj ObjectWithMeta) ([]string, error) {
 }
 
 // Harness of edit topology query
-func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) error {
+func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) (bool, error) {
 	var replicasUri []EditTopologyServer
 	var podLabels map[string]string = nil
 	var roles []string = nil
 	var err error
 
-	// Generating URI's array
+	// Generating pod URI's array
 	for key, pod := range replicas {
-		log.Info("Recieved values to join: " + key)
+		log.Info("Recieved pod to join: " + key)
 		thisPodLabels := pod.GetLabels()
 		clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
 		if !ok {
@@ -296,7 +296,7 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 
 			roles, err = GetRoles(pod)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
@@ -305,26 +305,26 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 	vshardGroup := "default"
 	useVshardGroups, ok := podLabels["tarantool.io/useVshardGroups"]
 	if !ok {
-		return errors.New("failed to get label tarantool.io/useVshardGroups")
+		return false, errors.New("failed to get label tarantool.io/useVshardGroups")
 	}
 	if useVshardGroups == "1" {
 		vshardGroup, ok = podLabels["tarantool.io/vshardGroupName"]
 		if !ok {
-			return errors.New("vshard_group undefined")
+			return false, errors.New("vshard_group undefined")
 		}
 	}
 
-	// Generating replicaset name
 	// TODO: So far weight can't be read from values.yaml
+	// ISSUE: #6
 	var replicasetsValues Replicasets
-	replicasetsValues.Alias = rsetName + "-replicaset"
+	replicasetsValues.Alias = rsetName
 	replicasetsValues.Roles = roles
 	replicasetsValues.Weight = 10
 	replicasetsValues.Vshard_group = vshardGroup
 	replicasetsValues.All_rw = false
 	replicasetsValues.JoinServers = replicasUri
 
-	// GraphQL request
+	// Send GraphQL EditTopology request to cartridge
 	var replicasetsValuesArray []Replicasets
 	client := graphql.NewClient(s.serviceHost, graphql.WithHTTPClient(&http.Client{Timeout: time.Duration(time.Second * 5)}))
 	req := graphql.NewRequest(editTopologyQuery)
@@ -333,14 +333,14 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 	resp := &EditTopologyResponse{}
 
 	if err := client.Run(context.TODO(), req, resp); err != nil {
-		return err
+		return false, err
 	}
 
-	return nil
+	return true, nil
 }
 
 // Join comment
-func (s *BuiltInTopologyService) Join(pod *corev1.Pod) error {
+func (s *BuiltInTopologyService) Join(pod *corev1.Pod) (bool, error) {
 
 	thisPodLabels := pod.GetLabels()
 	clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
@@ -356,31 +356,31 @@ func (s *BuiltInTopologyService) Join(pod *corev1.Pod) error {
 
 	replicasetUUID, ok := thisPodLabels["tarantool.io/replicaset-uuid"]
 	if !ok {
-		return errors.New("replicaset uuid empty")
+		return false, errors.New("replicaset uuid empty")
 	}
 
 	log.Info("payload", "advURI", advURI, "replicasetUUID", replicasetUUID)
 
 	instanceUUID, ok := thisPodLabels["tarantool.io/instance-uuid"]
 	if !ok {
-		return errors.New("instance uuid empty")
+		return false, errors.New("instance uuid empty")
 	}
 
 	roles, err := GetRoles(pod)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	vshardGroup := "default"
 	useVshardGroups, ok := thisPodLabels["tarantool.io/useVshardGroups"]
 	if !ok {
-		return errors.New("failed to get label tarantool.io/useVshardGroups")
+		return false, errors.New("failed to get label tarantool.io/useVshardGroups")
 	}
 
 	if useVshardGroups == "1" {
 		vshardGroup, ok = thisPodLabels["tarantool.io/vshardGroupName"]
 		if !ok {
-			return errors.New("vshard_group undefined")
+			return false, errors.New("vshard_group undefined")
 		}
 	}
 
@@ -396,20 +396,20 @@ func (s *BuiltInTopologyService) Join(pod *corev1.Pod) error {
 	resp := &JoinResponseData{}
 	if err := client.Run(context.TODO(), req, resp); err != nil {
 		if strings.Contains(err.Error(), "already joined") {
-			return errAlreadyJoined
+			return false, errAlreadyJoined
 		}
 		if strings.Contains(err.Error(), "This instance isn't bootstrapped yet") {
-			return errTopologyIsDown
+			return false, errTopologyIsDown
 		}
 
-		return err
+		return false, err
 	}
 
 	if resp.JoinInstance {
-		return nil
+		return true, nil
 	}
 
-	return errors.New("something really bad happened")
+	return false, errors.New("something really bad happened")
 }
 
 // SetFailover enables cluster failover

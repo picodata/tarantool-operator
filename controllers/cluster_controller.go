@@ -118,13 +118,9 @@ func SetInstanceUUID(o *corev1.Pod) *corev1.Pod {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.0/pkg/reconcile
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	reqLogger := log.FromContext(ctx)
 	reqLogger.Info("Reconciling Cluster")
 	reqLogger.Info("Namespace:" + req.Namespace)
-	// if req.Namespace != "bastida" {
-	// 	return ctrl.Result{}, nil
-	// }
 
 	// do nothing if no Cluster
 	cluster := &tarantooliov1alpha1.Cluster{}
@@ -135,7 +131,6 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
-	reqLogger.Info("One two")
 	clusterSelector, err := metav1.LabelSelectorAsSelector(cluster.Spec.Selector)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
@@ -149,7 +144,6 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
-	reqLogger.Info("three four")
 	for _, role := range roleList.Items {
 		if metav1.IsControlledBy(&role, cluster) {
 			reqLogger.Info("Already owned", "Role.Name", role.Name)
@@ -237,58 +231,22 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		topology.WithTopologyEndpoint(fmt.Sprintf("http://%s/admin/api", ep.Annotations["tarantool.io/leader"])),
 		topology.WithClusterID(cluster.GetName()),
 	)
-	reqLogger.Info("for _, sts := range stsList.Items {")
 
-	for _, sts := range stsList.Items {
-		log.Log.Info(">>>>>" + sts.GetName())
-	}
 	// Create replicasets, using EditTopology method
 	for _, sts := range stsList.Items {
-		// for i := 0; i < int(*sts.Spec.Replicas); i++ {
-		// 	pod := &corev1.Pod{}
-		// 	name := types.NamespacedName{
-		// 		Namespace: req.Namespace,
-		// 		Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
-		// 	}
-		// 	if err := r.Get(context.TODO(), name, pod); err != nil {
-		// 		if errors.IsNotFound(err) {
-		// 			return ctrl.Result{RequeueAfter: time.Duration( 4 * time.Second)}, err
-		// 		}
-
-		// 		return ctrl.Result{RequeueAfter: time.Duration( 4 * time.Second)}, err
-		// 	}
-
-		// 	podLogger := reqLogger.WithValues("Pod.Name", pod.GetName())
-		// 	if HasInstanceUUID(pod) {
-		// 		continue
-		// 	}
-		// 	podLogger.Info("starting: set instance uuid")
-		// 	pod = SetInstanceUUID(pod)
-
-		// 	if err := r.Update(context.TODO(), pod); err != nil {
-		// 		return ctrl.Result{RequeueAfter: time.Duration( 4 * time.Second)}, err
-		// 	}
-
-		// 	podLogger.Info("success: set instance uuid", "UUID", pod.GetLabels()["tarantool.io/instance-uuid"])
-		// 	return ctrl.Result{Requeue: true}, nil
-		// }
-
 		replicas := make(map[string]*corev1.Pod)
 		isJoined := false
 
 		// Iterate through pods in replicaset, wait until
 		// all pods are ready to be deployed
 		for i := 0; i < int(*sts.Spec.Replicas); i++ {
-			reqLogger.Info("1")
-
 			pod := &corev1.Pod{}
 			name := types.NamespacedName{
 				Namespace: req.Namespace,
 				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
 			}
 			podName := sts.GetName() + "-" + fmt.Sprint(i)
-			reqLogger.Info("Moving to replica: " + podName)
-			reqLogger.Info("2")
+			reqLogger.Info("Start editing topology for replicaset: " + podName)
 
 			if err := r.Get(context.TODO(), name, pod); err != nil {
 				if errors.IsNotFound(err) {
@@ -303,14 +261,12 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				isJoined = true
 				break
 			}
-			reqLogger.Info("3")
-
 			_, exists := replicas[podName]
 			if !exists {
-				reqLogger.Info("Found new node in replicaset, add to hashmap " + podName)
+				reqLogger.Info("Found new node in replicaset " + podName)
 				replicas[podName] = pod
 			} else {
-				reqLogger.Info("Node has already been explored and stored in hashmap " + podName)
+				reqLogger.Info("Node has already been explored " + podName)
 			}
 		}
 		if isJoined {
@@ -323,7 +279,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		reqLogger.Info("All replicas in replicaset explored, sending editTopology request")
-		if err := topologyClient.EditTopology(replicas, sts.GetName()); err != nil {
+		if _, err := topologyClient.EditTopology(replicas, sts.GetName()); err != nil {
 			reqLogger.Info("Failed to execute EditTopology")
 			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
@@ -336,7 +292,6 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 		}
 	}
-	reqLogger.Info("4")
 
 	// Bootstrap vshard storages
 	for _, sts := range stsList.Items {
