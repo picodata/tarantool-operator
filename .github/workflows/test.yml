@@ -63,6 +63,8 @@ jobs:
 
     - name: Set up helm
       uses: azure/setup-helm@v1
+      with:
+          version: latest
 
     - name: Set up Kind Cluster
       uses: helm/kind-action@v1.10.0
