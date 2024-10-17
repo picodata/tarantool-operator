@@ -276,7 +276,7 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 
 	// Generating URI's array
 	for key, pod := range replicas {
-		fmt.Println("Recieved values to join: ", key)
+		log.Info("Recieved values to join: " + key)
 		thisPodLabels := pod.GetLabels()
 		clusterDomainName, ok := thisPodLabels["tarantool.io/cluster-domain-name"]
 		if !ok {
@@ -317,7 +317,7 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 	// Generating replicaset name
 	// TODO: So far weight can't be read from values.yaml
 	var replicasetsValues Replicasets
-	replicasetsValues.Alias = rsetName + "_replicaset"
+	replicasetsValues.Alias = rsetName + "-replicaset"
 	replicasetsValues.Roles = roles
 	replicasetsValues.Weight = 10
 	replicasetsValues.Vshard_group = vshardGroup
