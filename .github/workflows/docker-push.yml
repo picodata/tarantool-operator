@@ -33,6 +33,3 @@ jobs:
           push: true
           tags: docker-picodata.binary.picodata.io/tarantool-operator:${{ github.ref_name }}
           file: ./Dockerfile
-
-      - name: Logout from Docker Hub
-        run: docker logout
