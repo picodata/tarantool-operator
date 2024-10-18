@@ -14,7 +14,7 @@ jobs:
       - name: Create Docker config with auth
         run: |
           mkdir -p ~/.docker
-          echo ${{ secrets.DOCKER_AUTH_CONFIG }} > ~/.docker/config.json
+          echo '${{ secrets.DOCKER_AUTH_CONFIG }}' > ~/.docker/config.json
           cat ~/.docker/config.json
           echo "End"
 
