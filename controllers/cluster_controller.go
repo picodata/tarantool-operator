@@ -31,8 +31,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -43,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -53,7 +52,6 @@ import (
 	tarantooliov1alpha1 "github.com/tarantool/tarantool-operator/api/v1alpha1"
 	"github.com/tarantool/tarantool-operator/controllers/tarantool"
 	"github.com/tarantool/tarantool-operator/controllers/topology"
-	"github.com/tarantool/tarantool-operator/controllers/utils"
 )
 
 var space = uuid.MustParse("73692FF6-EB42-46C2-92B6-65C45191368D")
@@ -122,31 +120,30 @@ func SetInstanceUUID(o *corev1.Pod) *corev1.Pod {
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reqLogger := log.FromContext(ctx)
 	reqLogger.Info("Reconciling Cluster")
+	reqLogger.Info("Namespace:" + req.Namespace)
 
 	// do nothing if no Cluster
 	cluster := &tarantooliov1alpha1.Cluster{}
-	if err := r.Get(context.TODO(), req.NamespacedName, cluster); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
-
 	clusterSelector, err := metav1.LabelSelectorAsSelector(cluster.Spec.Selector)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
 
 	roleList := &tarantooliov1alpha1.RoleList{}
 	if err := r.List(context.TODO(), roleList, &client.ListOptions{LabelSelector: clusterSelector, Namespace: req.NamespacedName.Namespace}); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
-
 	for _, role := range roleList.Items {
 		if metav1.IsControlledBy(&role, cluster) {
 			reqLogger.Info("Already owned", "Role.Name", role.Name)
@@ -159,10 +156,10 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		annotations["tarantool.io/cluster-id"] = cluster.GetName()
 		role.SetAnnotations(annotations)
 		if err := controllerutil.SetControllerReference(cluster, &role, r.Scheme); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 		if err := r.Update(context.TODO(), &role); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 
 		reqLogger.Info("Set role ownership", "Role.Name", role.GetName(), "Cluster.Name", cluster.GetName())
@@ -189,23 +186,23 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 
 			if err := controllerutil.SetControllerReference(cluster, svc, r.Scheme); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 			}
 
 			if err := r.Create(context.TODO(), svc); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 			}
 		}
 	}
-
+	reqLogger.Info("ep := &corev1.Endpoints{}")
 	// ensure Cluster leader elected
 	ep := &corev1.Endpoints{}
 	if err := r.Get(context.TODO(), types.NamespacedName{Namespace: cluster.GetNamespace(), Name: cluster.GetName()}, ep); err != nil {
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
 	if len(ep.Subsets) == 0 || len(ep.Subsets[0].Addresses) == 0 {
 		reqLogger.Info("No available Endpoint resource configured for Cluster, waiting")
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
 	}
 
 	if !IsLeaderExists(ep) {
@@ -217,17 +214,17 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		ep.Annotations["tarantool.io/leader"] = leader
 		if err := r.Update(context.TODO(), ep); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 	}
 
 	stsList := &appsv1.StatefulSetList{}
 	if err := r.List(context.TODO(), stsList, &client.ListOptions{LabelSelector: clusterSelector, Namespace: req.NamespacedName.Namespace}); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 	}
 
 	topologyClient := topology.NewBuiltInTopologyService(
@@ -235,175 +232,68 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		topology.WithClusterID(cluster.GetName()),
 	)
 
+	// Create replicasets, using EditTopology method
 	for _, sts := range stsList.Items {
+		replicas := make(map[string]*corev1.Pod)
+		isJoined := false
+
+		// Iterate through pods in replicaset, wait until
+		// all pods are ready to be deployed
 		for i := 0; i < int(*sts.Spec.Replicas); i++ {
 			pod := &corev1.Pod{}
 			name := types.NamespacedName{
 				Namespace: req.Namespace,
 				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
 			}
+			podName := sts.GetName() + "-" + fmt.Sprint(i)
+			reqLogger.Info("Start editing topology for replicaset: " + podName)
+
 			if err := r.Get(context.TODO(), name, pod); err != nil {
 				if errors.IsNotFound(err) {
-					return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 				}
 
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-			}
-
-			podLogger := reqLogger.WithValues("Pod.Name", pod.GetName())
-			if HasInstanceUUID(pod) {
-				continue
-			}
-			podLogger.Info("starting: set instance uuid")
-			pod = SetInstanceUUID(pod)
-
-			if err := r.Update(context.TODO(), pod); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-			}
-
-			podLogger.Info("success: set instance uuid", "UUID", pod.GetLabels()["tarantool.io/instance-uuid"])
-			return ctrl.Result{Requeue: true}, nil
-		}
-
-		for i := 0; i < int(*sts.Spec.Replicas); i++ {
-			pod := &corev1.Pod{}
-			name := types.NamespacedName{
-				Namespace: req.Namespace,
-				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
-			}
-			if err := r.Get(context.TODO(), name, pod); err != nil {
-				if errors.IsNotFound(err) {
-					return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
-				}
-
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 			}
 
 			if tarantool.IsJoined(pod) {
-				continue
+				reqLogger.Info("Already joined", "Pod.Name", pod.Name)
+				isJoined = true
+				break
 			}
-
-			if err := topologyClient.Join(pod); err != nil {
-				if topology.IsAlreadyJoined(err) {
-					tarantool.MarkJoined(pod)
-					if err := r.Update(context.TODO(), pod); err != nil {
-						return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-					}
-					reqLogger.Info("Already joined", "Pod.Name", pod.Name)
-					continue
-				}
-
-				if topology.IsTopologyDown(err) {
-					reqLogger.Info("Topology is down", "Pod.Name", pod.Name)
-					continue
-				}
-
-				reqLogger.Error(err, "Join error")
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+			_, exists := replicas[podName]
+			if !exists {
+				reqLogger.Info("Found new node in replicaset " + podName)
+				replicas[podName] = pod
 			} else {
-				tarantool.MarkJoined(pod)
-				if err := r.Update(context.TODO(), pod); err != nil {
-					return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-				}
+				reqLogger.Info("Node has already been explored " + podName)
 			}
-
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
 		}
-	}
-
-	for _, sts := range stsList.Items {
-		stsAnnotations := sts.GetAnnotations()
-		weight := stsAnnotations["tarantool.io/replicaset-weight"]
-
-		current_weight, err := topologyClient.GetWeight(sts.GetLabels()["tarantool.io/replicaset-uuid"])
-		if err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-		}
-
-		if current_weight == -1 || strconv.Itoa(current_weight) == weight {
+		if isJoined {
 			continue
 		}
 
-		if weight == "0" {
-			reqLogger.Info("weight is set to 0, checking replicaset buckets for scheduled deletion")
-			data, err := topologyClient.GetServerStat()
-			if err != nil {
-				reqLogger.Error(err, "failed to get server stats")
-			} else {
-				for i := 0; i < len(data.Stats); i++ {
-					if strings.HasPrefix(data.Stats[i].URI, sts.GetName()) {
-						reqLogger.Info("Found statefulset to check for buckets count", "sts.Name", sts.GetName())
-
-						bucketsCount := data.Stats[i].Statistics.BucketsCount
-						if bucketsCount == 0 {
-							reqLogger.Info("replicaset has migrated all of its buckets away, schedule to remove", "sts.Name", sts.GetName())
-
-							stsAnnotations["tarantool.io/scheduledDelete"] = "1"
-							sts.SetAnnotations(stsAnnotations)
-							if err := r.Update(context.TODO(), &sts); err != nil {
-								reqLogger.Error(err, "failed to set scheduled deletion annotation")
-							}
-						} else {
-							reqLogger.Info("replicaset still has buckets, retry checking on next run", "sts.Name", sts.GetName(), "buckets", bucketsCount)
-						}
-					}
-				}
-			}
+		if len(replicas) != int(*sts.Spec.Replicas) {
+			reqLogger.Info("Hasn't explored all replicas in replicaset - requeue")
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 
-		for i := 0; i < int(*sts.Spec.Replicas); i++ {
-			pod := &corev1.Pod{}
-			name := types.NamespacedName{
-				Namespace: req.Namespace,
-				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
-			}
-
-			if err := r.Get(context.TODO(), name, pod); err != nil {
-				if errors.IsNotFound(err) {
-					return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
-				}
-
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-			}
-
-			if !tarantool.IsJoined(pod) {
-				reqLogger.Info("Not all instances joined, skip weight change", "StatefulSet.Name", sts.GetName())
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
-			}
+		reqLogger.Info("All replicas in replicaset explored, sending editTopology request")
+		if _, err := topologyClient.EditTopology(replicas, sts.GetName()); err != nil {
+			reqLogger.Info("Failed to execute EditTopology")
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 		}
 
-		if err := topologyClient.SetWeight(sts.GetLabels()["tarantool.io/replicaset-uuid"], weight); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+		// Upon successful replicaset deployment, mark each replica as joined
+		for _, pod := range replicas {
+			tarantool.MarkJoined(pod)
+			if err := r.Update(context.TODO(), pod); err != nil {
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			}
 		}
 	}
 
-	for _, sts := range stsList.Items {
-		replicasetUUID := sts.GetLabels()["tarantool.io/replicaset-uuid"]
-
-		actualRoles, err := topologyClient.GetReplicasetRolesFromService(replicasetUUID)
-		if err != nil {
-			reqLogger.Error(err, "Getting roles from server")
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-		}
-
-		desireRoles, err := topology.GetRoles(&sts.ObjectMeta)
-		if err != nil {
-			reqLogger.Error(err, "Getting roles from statefulset")
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-		}
-
-		if utils.IsRolesEquals(actualRoles, desireRoles) {
-			continue
-		}
-		reqLogger.Info("Update replicaset roles", "id", replicasetUUID, "from", actualRoles, "to", desireRoles)
-
-		err = topologyClient.SetReplicasetRoles(replicasetUUID, desireRoles)
-		if err != nil {
-			reqLogger.Error(err, "Setting new replicaset roles")
-			return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
-		}
-	}
-
+	// Bootstrap vshard storages
 	for _, sts := range stsList.Items {
 		stsAnnotations := sts.GetAnnotations()
 		if stsAnnotations["tarantool.io/isBootstrapped"] != "1" {
@@ -422,13 +312,13 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					cluster.Status.State = "Ready"
 					err = r.Status().Update(context.TODO(), cluster)
 					if err != nil {
-						return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+						return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 					}
-					return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
 				}
 
 				reqLogger.Error(err, "Bootstrap vshard error")
-				return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
 			}
 		} else {
 			reqLogger.Info("cluster is already bootstrapped, not retrying", "Statefulset.Name", sts.GetName())
@@ -459,7 +349,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	return ctrl.Result{RequeueAfter: time.Duration(5 * time.Second)}, nil
+	return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -478,5 +368,6 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}},
 			}
 		})).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Complete(r)
 }
