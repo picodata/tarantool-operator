@@ -1,5 +1,5 @@
 name: Test
-on: [push]
+on: push
 
 jobs:
   build:
@@ -23,6 +23,7 @@ jobs:
           context: .
           push: true
           tags: docker-picodata.binary.picodata.io/tarantool-operator:0.1.1
+          # tags: docker-picodata.binary.picodata.io/tarantool-operator:${{ github.ref_name }}
           file: ./Dockerfile
 
       - name: Delete docker auth config
