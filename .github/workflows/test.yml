@@ -17,14 +17,8 @@ jobs:
           echo "${{ secrets.DOCKER_AUTH_CONFIG }}" > ~/.docker/config.json
           echo "End"
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: docker-picodata.binary.picodata.io/tarantool-operator:0.1.1
-          # tags: docker-picodata.binary.picodata.io/tarantool-operator:${{ github.ref_name }}
-          file: ./Dockerfile
+      - name: Push docker
+        run: docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:0.1.1
 
       - name: Delete docker auth config
         run: rm -rf ~/.docker/config.json  # Clean up Docker auth credentials
