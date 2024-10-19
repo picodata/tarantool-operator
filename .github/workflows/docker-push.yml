@@ -20,10 +20,11 @@ jobs:
           mkdir -p ~/.docker
           echo '${{ secrets.DOCKER_AUTH_CONFIG }}' > ~/.docker/config.json
 
-      - name: Extract Tag Name
-        run: |
-          TAG=$(echo "${GITHUB_REF#refs/tags/tarantool-operator-}")
-          echo "TAG=$VERSION" >> $GITHUB_ENV
+      - name: Extract tag name
+        run: echo "TAG=${GITHUB_REF#refs/tags/tarantool-operator-}" >> $GITHUB_ENV
+
+      - name: Show extracted tag
+        run: echo "The extracted tag is ${{ env.TAG }}"
 
       - name: Push docker
         run: |
