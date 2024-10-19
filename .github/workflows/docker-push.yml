@@ -1,13 +1,9 @@
 name: Build and Push Docker Image of operator
 
-on: [push]
-  # workflow_run:
-  #   workflows: ["Tests"]
-  #   types:
-  #     - completed
-  # push:
-  #   tags:
-  #       - 'v*'
+on:
+  push:
+    tags:
+        - '*'
 
 jobs:
   build:
@@ -24,10 +20,16 @@ jobs:
           mkdir -p ~/.docker
           echo '${{ secrets.DOCKER_AUTH_CONFIG }}' > ~/.docker/config.json
 
+      - name: Extract Tag Name
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Show Extracted Tag
+        run: echo "The extracted tag is ${{ env.TAG }}"
+
       - name: Push docker
         run: |
-          docker build -t docker-picodata.binary.picodata.io/tarantool-operator::${{ github.ref_name }} .
-          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator::${{ github.ref_name }}
+          docker build -t docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }}.
+          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }}
 
       - name: Delete docker auth config
         run: rm -rf ~/.docker/config.json  # Clean up Docker auth credentials
