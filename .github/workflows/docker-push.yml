@@ -1,0 +1,38 @@
+name: Build and Push Docker Image of operator
+
+on:
+  push:
+    tags:
+        - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Create Docker config with auth
+        run: |
+          mkdir -p ~/.docker
+          echo '${{ secrets.DOCKER_AUTH_CONFIG }}' > ~/.docker/config.json
+
+      - name: Extract tag name
+        run: echo "TAG=${GITHUB_REF#refs/tags/tarantool-operator-}" >> $GITHUB_ENV
+
+      - name: Show extracted tag
+        run: echo "The extracted tag is ${{ env.TAG }}"
+
+      - name: Push docker
+        run: |
+          docker build -t docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }} .
+          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }}
+
+          docker build -t docker-picodata.binary.picodata.io/tarantool-operator:latest .
+          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:latest
+
+      - name: Delete docker auth config
+        run: rm -rf ~/.docker/config.json  # Clean up Docker auth credentials
