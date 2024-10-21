@@ -368,6 +368,6 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}},
 			}
 		})).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
 }
