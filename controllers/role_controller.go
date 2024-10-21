@@ -232,7 +232,7 @@ func (r *RoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &tarantooliov1alpha1.ReplicasetTemplate{}}, handler.EnqueueRequestsFromMapFunc(func(a client.Object) []reconcile.Request {
 			roleList := &tarantooliov1alpha1.RoleList{}
 			if err := r.Client.List(context.TODO(), roleList, &client.ListOptions{}); err != nil {
-				mgr.GetLogger().Info("error while getting list of roles")
+				mgr.GetLogger().Error(err, "error while getting list of roles")
 			}
 
 			res := []reconcile.Request{}
