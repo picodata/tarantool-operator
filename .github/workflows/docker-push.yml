@@ -21,18 +21,19 @@ jobs:
           echo '${{ secrets.DOCKER_AUTH_CONFIG }}' > ~/.docker/config.json
 
       - name: Extract tag name
-        run: echo "TAG=${GITHUB_REF#refs/tags/tarantool-operator-}" >> $GITHUB_ENV
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Show extracted tag
         run: echo "The extracted tag is ${{ env.TAG }}"
 
       - name: Push docker
         run: |
-          docker build -t docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }} .
-          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }}
+          docker build \
+              -t docker-picodata.binary.picodata.io/tarantool-operator:${{ env.TAG }} \
+              -t docker-picodata.binary.picodata.io/tarantool-operator:latest \
+              .
 
-          docker build -t docker-picodata.binary.picodata.io/tarantool-operator:latest .
-          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator:latest
+          docker --config ~/.docker/ push docker-picodata.binary.picodata.io/tarantool-operator --all-tags
 
       - name: Delete docker auth config
         run: rm -rf ~/.docker/config.json  # Clean up Docker auth credentials
