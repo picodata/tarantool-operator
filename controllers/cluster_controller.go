@@ -39,6 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -122,14 +123,18 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	reqLogger.Info("Reconciling Cluster")
 	reqLogger.Info("Namespace:" + req.Namespace)
 
+	if req.Namespace != "bastida" {
+		return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, fmt.Errorf("wrong namespace for reconcile")
+	}
+
 	// do nothing if no Cluster
 	cluster := &tarantooliov1alpha1.Cluster{}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, err
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, err
 	}
 	clusterSelector, err := metav1.LabelSelectorAsSelector(cluster.Spec.Selector)
 	if err != nil {
@@ -232,8 +237,58 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		topology.WithClusterID(cluster.GetName()),
 	)
 
-	// Create replicasets, using EditTopology method
+	reqLogger.Info("Wait for all instances to start")
+
 	for _, sts := range stsList.Items {
+		reqLogger.Info("Checking STS: " + sts.GetName())
+		for i := 0; i < int(*sts.Spec.Replicas); i++ {
+			pod := &corev1.Pod{}
+			name := types.NamespacedName{
+				Namespace: req.Namespace,
+				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
+			}
+			podName := sts.GetName() + "-" + fmt.Sprint(i)
+
+			if err := r.Get(context.TODO(), name, pod); err != nil {
+				if errors.IsNotFound(err) {
+					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				}
+
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			}
+
+			if pod.Status.Phase != corev1.PodRunning {
+				reqLogger.Info("Pod is not yet running: " + podName)
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+			}
+
+			isPodReady := false
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+					isPodReady = true
+					break
+				}
+			}
+
+			if !isPodReady {
+				reqLogger.Info("Pod is not yet running: " + podName)
+				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+			}
+
+		}
+		if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
+			reqLogger.Info("StatefulSet is not fully ready, requeuing...")
+			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+		}
+	}
+
+	reqLogger.Info("All instances have started")
+
+	// Create replicasets, using EditTopology method
+	for cntr, sts := range stsList.Items {
+		if cntr == 0 {
+			fmt.Println("I AM FIRST: ", sts.GetName())
+		}
 		replicas := make(map[string]*corev1.Pod)
 		isJoined := false
 
@@ -285,6 +340,8 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		// Upon successful replicaset deployment, mark each replica as joined
+
+		reqLogger.Info("Successfully created replcaset")
 		for _, pod := range replicas {
 			tarantool.MarkJoined(pod)
 			if err := r.Update(context.TODO(), pod); err != nil {
@@ -349,7 +406,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -368,6 +425,9 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}},
 			}
 		})).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 0,
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+		}).
 		Complete(r)
 }
