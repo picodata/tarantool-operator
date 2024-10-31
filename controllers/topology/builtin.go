@@ -132,8 +132,8 @@ type EditTopologyServer struct {
 	Uri string `json:"uri"`
 }
 
-// Replicasets
-type Replicasets struct {
+// Replicaset
+type Replicaset struct {
 	Alias        string               `json:"alias"`
 	Roles        []string             `json:"roles"`
 	Weight       int                  `json:"weight"`
@@ -268,7 +268,7 @@ func GetRoles(obj ObjectWithMeta) ([]string, error) {
 }
 
 // Harness of edit topology query
-func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, rsetName string) (bool, error) {
+func (s *BuiltInTopologyService) GetReplicasetValues(replicas map[string]*corev1.Pod, rsetName string) (Replicaset, error) {
 	var replicasUri []EditTopologyServer
 	var podLabels map[string]string = nil
 	var roles []string = nil
@@ -297,7 +297,7 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 
 			roles, err = GetRoles(pod)
 			if err != nil {
-				return false, err
+				return Replicaset{}, err
 			}
 		}
 	}
@@ -306,18 +306,18 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 	vshardGroup := "default"
 	useVshardGroups, ok := podLabels["tarantool.io/useVshardGroups"]
 	if !ok {
-		return false, errors.New("failed to get label tarantool.io/useVshardGroups")
+		return Replicaset{}, errors.New("failed to get label tarantool.io/useVshardGroups")
 	}
 	if useVshardGroups == "1" {
 		vshardGroup, ok = podLabels["tarantool.io/vshardGroupName"]
 		if !ok {
-			return false, errors.New("vshard_group undefined")
+			return Replicaset{}, errors.New("vshard_group undefined")
 		}
 	}
 
 	// TODO: So far weight can't be read from values.yaml
 	// ISSUE: #6
-	var replicasetsValues Replicasets
+	var replicasetsValues Replicaset
 	replicasetsValues.Alias = rsetName
 	replicasetsValues.Roles = roles
 	replicasetsValues.Weight = 10
@@ -325,12 +325,14 @@ func (s *BuiltInTopologyService) EditTopology(replicas map[string]*corev1.Pod, r
 	replicasetsValues.All_rw = false
 	replicasetsValues.JoinServers = replicasUri
 
+	return replicasetsValues, nil
+}
+
+func (s *BuiltInTopologyService) ExecEditTopology(replicasets []Replicaset) (bool, error) {
 	// Send GraphQL EditTopology request to cartridge
-	var replicasetsValuesArray []Replicasets
 	client := graphql.NewClient(s.serviceHost, graphql.WithHTTPClient(&http.Client{Timeout: time.Duration(time.Second * 5)}))
 	req := graphql.NewRequest(editTopologyQuery)
-	replicasetsValuesArray = append(replicasetsValuesArray, replicasetsValues)
-	req.Var("replicasets", replicasetsValuesArray)
+	req.Var("replicasets", replicasets)
 	resp := &EditTopologyResponse{}
 
 	if err := client.Run(context.TODO(), req, resp); err != nil {
