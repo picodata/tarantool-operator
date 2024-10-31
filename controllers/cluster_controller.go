@@ -123,31 +123,23 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	reqLogger.Info("Reconciling Cluster")
 	reqLogger.Info("Namespace:" + req.Namespace)
 
-	if req.Namespace != "bastida" {
-		return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, fmt.Errorf("wrong namespace for reconcile")
-	}
-
 	// do nothing if no Cluster
 	cluster := &tarantooliov1alpha1.Cluster{}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, err
-		}
-
 		return ctrl.Result{RequeueAfter: time.Duration(1 * time.Second)}, err
 	}
 	clusterSelector, err := metav1.LabelSelectorAsSelector(cluster.Spec.Selector)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 	}
 
 	roleList := &tarantooliov1alpha1.RoleList{}
 	if err := r.List(context.TODO(), roleList, &client.ListOptions{LabelSelector: clusterSelector, Namespace: req.NamespacedName.Namespace}); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 	}
 	for _, role := range roleList.Items {
 		if metav1.IsControlledBy(&role, cluster) {
@@ -161,10 +153,10 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		annotations["tarantool.io/cluster-id"] = cluster.GetName()
 		role.SetAnnotations(annotations)
 		if err := controllerutil.SetControllerReference(cluster, &role, r.Scheme); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 		}
 		if err := r.Update(context.TODO(), &role); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 		}
 
 		reqLogger.Info("Set role ownership", "Role.Name", role.GetName(), "Cluster.Name", cluster.GetName())
@@ -191,11 +183,11 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 
 			if err := controllerutil.SetControllerReference(cluster, svc, r.Scheme); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 			}
 
 			if err := r.Create(context.TODO(), svc); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 			}
 		}
 	}
@@ -203,11 +195,11 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// ensure Cluster leader elected
 	ep := &corev1.Endpoints{}
 	if err := r.Get(context.TODO(), types.NamespacedName{Namespace: cluster.GetNamespace(), Name: cluster.GetName()}, ep); err != nil {
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 	}
 	if len(ep.Subsets) == 0 || len(ep.Subsets[0].Addresses) == 0 {
 		reqLogger.Info("No available Endpoint resource configured for Cluster, waiting")
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+		return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 	}
 
 	if !IsLeaderExists(ep) {
@@ -219,17 +211,17 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		ep.Annotations["tarantool.io/leader"] = leader
 		if err := r.Update(context.TODO(), ep); err != nil {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 		}
 	}
 
 	stsList := &appsv1.StatefulSetList{}
 	if err := r.List(context.TODO(), stsList, &client.ListOptions{LabelSelector: clusterSelector, Namespace: req.NamespacedName.Namespace}); err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 		}
 
-		return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+		return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 	}
 
 	topologyClient := topology.NewBuiltInTopologyService(
@@ -251,15 +243,15 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			if err := r.Get(context.TODO(), name, pod); err != nil {
 				if errors.IsNotFound(err) {
-					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+					return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 				}
 
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 			}
 
 			if pod.Status.Phase != corev1.PodRunning {
 				reqLogger.Info("Pod is not yet running: " + podName)
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 			}
 
 			isPodReady := false
@@ -272,25 +264,23 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			if !isPodReady {
 				reqLogger.Info("Pod is not yet running: " + podName)
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 			}
 
 		}
 		if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
-			reqLogger.Info("StatefulSet is not fully ready, requeuing...")
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+			reqLogger.Info("StatefulSet hasn't started, requeue...")
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 		}
 	}
 
 	reqLogger.Info("All instances have started")
 
+	var replicasets []topology.Replicaset
 	// Create replicasets, using EditTopology method
-	for cntr, sts := range stsList.Items {
-		if cntr == 0 {
-			fmt.Println("I AM FIRST: ", sts.GetName())
-		}
-		replicas := make(map[string]*corev1.Pod)
+	for _, sts := range stsList.Items {
 		isJoined := false
+		replicas := make(map[string]*corev1.Pod)
 
 		// Iterate through pods in replicaset, wait until
 		// all pods are ready to be deployed
@@ -305,10 +295,10 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			if err := r.Get(context.TODO(), name, pod); err != nil {
 				if errors.IsNotFound(err) {
-					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+					return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 				}
 
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 			}
 
 			if tarantool.IsJoined(pod) {
@@ -330,22 +320,45 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		if len(replicas) != int(*sts.Spec.Replicas) {
 			reqLogger.Info("Hasn't explored all replicas in replicaset - requeue")
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 		}
 
-		reqLogger.Info("All replicas in replicaset explored, sending editTopology request")
-		if _, err := topologyClient.EditTopology(replicas, sts.GetName()); err != nil {
+		reqLogger.Info("All replicas in replicaset explored, creating graphql struct")
+		if curReplicaset, err := topologyClient.GetReplicasetValues(replicas, sts.GetName()); err != nil {
 			reqLogger.Info("Failed to execute EditTopology")
-			return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+			return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
+		} else {
+			replicasets = append(replicasets, curReplicaset)
 		}
 
-		// Upon successful replicaset deployment, mark each replica as joined
+		reqLogger.Info("Successfully generated graphQL variables for replicaset: " + sts.GetName())
+	}
 
-		reqLogger.Info("Successfully created replcaset")
-		for _, pod := range replicas {
-			tarantool.MarkJoined(pod)
-			if err := r.Update(context.TODO(), pod); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+	if len(replicasets) != 0 {
+		reqLogger.Info("Sending clusterwide EditTopology request")
+
+		if _, err := topologyClient.ExecEditTopology(replicasets); err != nil {
+			reqLogger.Info("Failed to execute EditTopology request")
+			return ctrl.Result{RequeueAfter: time.Duration(20 * time.Second)}, err
+		}
+		reqLogger.Info("Successfull EditTopology request, marking pods as joined")
+
+		for _, sts := range stsList.Items {
+			for i := 0; i < int(*sts.Spec.Replicas); i++ {
+				pod := &corev1.Pod{}
+				name := types.NamespacedName{
+					Namespace: req.Namespace,
+					Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
+				}
+
+				if err := r.Get(context.TODO(), name, pod); err != nil {
+					return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
+				}
+
+				tarantool.MarkJoined(pod)
+				if err := r.Update(context.TODO(), pod); err != nil {
+					return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
+				}
 			}
 		}
 	}
@@ -369,13 +382,13 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					cluster.Status.State = "Ready"
 					err = r.Status().Update(context.TODO(), cluster)
 					if err != nil {
-						return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+						return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 					}
-					return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, nil
+					return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, nil
 				}
 
 				reqLogger.Error(err, "Bootstrap vshard error")
-				return ctrl.Result{RequeueAfter: time.Duration(4 * time.Second)}, err
+				return ctrl.Result{RequeueAfter: time.Duration(60 * time.Second)}, err
 			}
 		} else {
 			reqLogger.Info("cluster is already bootstrapped, not retrying", "Statefulset.Name", sts.GetName())
@@ -426,7 +439,7 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 		})).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 0,
+			MaxConcurrentReconciles: 1,
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
 		Complete(r)
