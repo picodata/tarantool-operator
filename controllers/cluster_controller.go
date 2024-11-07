@@ -230,42 +230,12 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	reqLogger.Info("Wait for all instances to start")
 
-	for _, sts := range stsList.Items {
-		reqLogger.Info("Checking STS: " + sts.GetName())
-		for i := 0; i < int(*sts.Spec.Replicas); i++ {
-			pod := &corev1.Pod{}
-			name := types.NamespacedName{
-				Namespace: req.Namespace,
-				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
-			}
-			podName := sts.GetName() + "-" + fmt.Sprint(i)
-
-			if err := r.Get(context.TODO(), name, pod); err != nil {
-				return ctrl.Result{RequeueAfter: time.Duration(defaultTimeout * time.Second)}, err
-			}
-
-			if pod.Status.Phase != corev1.PodRunning {
-				reqLogger.Info("Pod is not yet running: " + podName)
-				return ctrl.Result{RequeueAfter: time.Duration(defaultTimeout * time.Second)}, nil
-			}
-
-			isPodReady := false
-			for _, condition := range pod.Status.Conditions {
-				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-					isPodReady = true
-					break
-				}
-			}
-
-			if !isPodReady {
-				reqLogger.Info("Pod is not yet running: " + podName)
-				return ctrl.Result{RequeueAfter: time.Duration(defaultTimeout * time.Second)}, nil
-			}
-
-		}
-		if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
-			reqLogger.Info("StatefulSet hasn't started, requeue...")
-			return ctrl.Result{RequeueAfter: time.Duration(defaultTimeout * time.Second)}, nil
+	if ready, err := r.waitAllPods(stsList, req.Namespace); err != nil {
+		return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
+	} else {
+		if !ready {
+			reqLogger.Info("Instances are not ready, requeue")
+			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, nil
 		}
 	}
 
@@ -273,8 +243,8 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var replicasets []topology.Replicaset
 	// Create replicasets, using EditTopology method
+	isJoined := false
 	for _, sts := range stsList.Items {
-		isJoined := false
 		replicas := make(map[string]*corev1.Pod)
 
 		// Iterate through pods in replicaset, wait until
@@ -305,8 +275,11 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				reqLogger.Info("Node has already been explored " + podName)
 			}
 		}
+		// EditTopology is sent clusterwide, wich is atomic
+		// Thus either all nodes or
+		// none of them has to be joined
 		if isJoined {
-			continue
+			break
 		}
 
 		if len(replicas) != int(*sts.Spec.Replicas) {
@@ -314,21 +287,21 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
 		}
 
-		reqLogger.Info("All replicas in replicaset explored, creating graphql struct")
-		if curReplicaset, err := topologyClient.GetReplicasetValues(replicas, sts.GetName()); err != nil {
-			reqLogger.Info("Failed to execute EditTopology")
+		reqLogger.Info("All replicas in replicaset explored, fetching replicaset topology values")
+		if currentReplicaset, err := topologyClient.GetReplicasetValues(replicas, sts.GetName()); err != nil {
+			reqLogger.Info("Failed to fetch topology values from replicaset")
 			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
 		} else {
-			replicasets = append(replicasets, curReplicaset)
+			replicasets = append(replicasets, *currentReplicaset)
 		}
 
-		reqLogger.Info("Successfully generated graphQL variables for replicaset: " + sts.GetName())
+		reqLogger.Info("Successfully fetched topology values from replicaset: " + sts.GetName())
 	}
 
-	if len(replicasets) != 0 {
+	if !isJoined {
 		reqLogger.Info("Sending clusterwide EditTopology request")
 
-		if _, err := topologyClient.ExecEditTopology(replicasets); err != nil {
+		if _, err := topologyClient.EditTopology(replicasets); err != nil {
 			reqLogger.Info("Failed to execute EditTopology request")
 			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
 		}
@@ -411,6 +384,42 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	return ctrl.Result{RequeueAfter: time.Duration(defaultTimeout * time.Second)}, nil
+}
+
+func (r *ClusterReconciler) waitAllPods(stsList *appsv1.StatefulSetList, namespace string) (bool, error) {
+	for _, sts := range stsList.Items {
+		for i := 0; i < int(*sts.Spec.Replicas); i++ {
+			pod := &corev1.Pod{}
+			name := types.NamespacedName{
+				Namespace: namespace,
+				Name:      fmt.Sprintf("%s-%d", sts.GetName(), i),
+			}
+
+			if err := r.Get(context.TODO(), name, pod); err != nil {
+				return false, err
+			}
+
+			if pod.Status.Phase != corev1.PodRunning {
+				return false, nil
+			}
+
+			isPodReady := false
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+					isPodReady = true
+					break
+				}
+			}
+
+			if !isPodReady {
+				return false, nil
+			}
+		}
+		if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
