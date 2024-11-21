@@ -289,7 +289,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		reqLogger.Info("All replicas in replicaset explored, fetching replicaset topology values")
 		if currentReplicaset, err := topologyClient.GetReplicasetValues(replicas, sts.GetName()); err != nil {
-			reqLogger.Info("Failed to fetch topology values from replicaset")
+			reqLogger.Error(err, "Failed to fetch topology values from replicaset")
 			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
 		} else {
 			replicasets = append(replicasets, *currentReplicaset)
@@ -302,7 +302,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		reqLogger.Info("Sending clusterwide EditTopology request")
 
 		if _, err := topologyClient.EditTopology(replicasets); err != nil {
-			reqLogger.Info("Failed to execute EditTopology request")
+			reqLogger.Error(err, "Failed to execute EditTopology request")
 			return ctrl.Result{RequeueAfter: time.Duration(errorTimeout * time.Second)}, err
 		}
 		reqLogger.Info("Successfull EditTopology request, marking pods as joined")
